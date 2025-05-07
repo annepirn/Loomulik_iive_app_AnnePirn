@@ -38,24 +38,24 @@ def import_data():
 def import_geojson():
     return gpd.read_file(GEOJSON_PATH)
 
-# --- Streamlit UI ---
-st.set_page_config(layout="wide")
+# --- Streamlit ---
+st.set_page_config(page_title="Loomulik iive", layout="wide")
 st.title("Loomulik iive Eesti maakondades")
 
-# Andmed
+# --- Andmete laadimine ---
 df = import_data()
 gdf = import_geojson()
+
 if df.empty:
     st.stop()
 
-# Külgriba valikud
+# --- Vasak menüü ---
 with st.sidebar:
-    st.header("Seaded")
     valitud_aasta = st.selectbox("Vali aasta", sorted(df["Aasta"].unique()))
     sugu_valik = st.selectbox("Vali sugupool", ["Mehed", "Naised", "Kokku"])
-    muutuja_valik = st.selectbox("Vali näitaja", ["Elussünnid", "Surmad", "Loomulik iive"])
+    muutuja_valik = st.selectbox("Vali kaardimuutuja", ["Elussünnid", "Surmad", "Loomulik iive"])
 
-# Andmetöötlus
+# --- Andmete töötlemine kaardi jaoks ---
 df_aasta = df[df["Aasta"] == valitud_aasta]
 
 if sugu_valik in ["Mehed", "Naised"]:
@@ -75,19 +75,47 @@ else:
     df_summa["Valitud"] = df_summa[mehed_veerg] + df_summa[naised_veerg]
     df_summa = df_summa[["Maakond", "Valitud"]]
 
-# Geoandmete ühendamine
+# --- Kaart ---
 gdf_merged = gdf.merge(df_summa, how="left", left_on="MNIMI", right_on="Maakond")
 
-# --- Kaart ---
-st.subheader(f"{sugu_valik} {muutuja_valik} maakondade kaupa ({valitud_aasta})")
 fig, ax = plt.subplots(figsize=(10, 8))
 gdf_merged.plot(
     column="Valitud", cmap="viridis", linewidth=0.8, ax=ax, edgecolor='0.8', legend=True
 )
+ax.set_title(f"{sugu_valik} {muutuja_valik} maakondade kaupa ({valitud_aasta})")
 ax.axis('off')
 st.pyplot(fig)
 
-# --- Tabel ---
-st.subheader("Maakondlikud andmed (tabelina)")
-df_summa_sorted = df_summa.sort_values("Valitud", ascending=False).reset_index(drop=True)
-st.dataframe(df_summa_sorted, use_container_width=True)
+# --- Tabel kõigi näitajatega ---
+df_tabel = df[df["Aasta"] == valitud_aasta].copy()
+
+if sugu_valik in ["Mehed", "Naised"]:
+    cols = [f"{sugu_valik} Elussünnid", f"{sugu_valik} Surmad", f"{sugu_valik} Loomulik iive"]
+    for col in cols:
+        if col not in df_tabel.columns:
+            st.error(f"Veerg '{col}' puudub andmetes.")
+            st.stop()
+    df_tabel = df_tabel[["Maakond"] + cols].copy()
+    df_tabel.columns = ["Maakond", "Elussünnid", "Surmad", "Loomulik iive"]
+else:
+    for muutuja in ["Elussünnid", "Surmad", "Loomulik iive"]:
+        if f"Mehed {muutuja}" not in df_tabel.columns or f"Naised {muutuja}" not in df_tabel.columns:
+            st.error(f"Puuduvad vajalikud veerud: Mehed {muutuja} või Naised {muutuja}.")
+            st.stop()
+    df_tabel["Elussünnid"] = df_tabel["Mehed Elussünnid"] + df_tabel["Naised Elussünnid"]
+    df_tabel["Surmad"] = df_tabel["Mehed Surmad"] + df_tabel["Naised Surmad"]
+    df_tabel["Loomulik iive"] = df_tabel["Mehed Loomulik iive"] + df_tabel["Naised Loomulik iive"]
+    df_tabel = df_tabel[["Maakond", "Elussünnid", "Surmad", "Loomulik iive"]]
+
+# --- Tabeli kuvamine ---
+st.subheader(f"Tabel: {sugu_valik} näitajad maakondade kaupa ({valitud_aasta})")
+st.dataframe(df_tabel)
+
+# --- Allalaadimine ---
+csv = df_tabel.to_csv(index=False).encode("utf-8")
+st.download_button(
+    label="Laadi tabel alla CSV-na",
+    data=csv,
+    file_name=f"{sugu_valik.lower()}_loomulik_iive_{valitud_aasta}.csv",
+    mime="text/csv"
+)
