@@ -87,43 +87,51 @@ ax.axis('off')
 st.pyplot(fig)
 
 # --- Tabel kõigi näitajatega ---
-df_tabel = df[df["Aasta"] == valitud_aasta].copy()
+df_aasta = df[df["Aasta"] == valitud_aasta].copy()
 
-# Lisame maakonna koodid gdf-ist
-maakonna_koodid = gdf[["MNIMI", "ADM2_KOOD"]].rename(columns={"MNIMI": "Maakond", "ADM2_KOOD": "Maakonna kood"})
-df_tabel = df_tabel.merge(maakonna_koodid, on="Maakond", how="left")
+# Lisame maakonna koodid geoandmetest
+maakonna_koodid = gdf[["MNIMI", "MKOOD"]].rename(columns={"MNIMI": "Maakond", "MKOOD": "Maakonna kood"})
+df_aasta = df_aasta.merge(maakonna_koodid, on="Maakond", how="left")
+
+# Loome uue DataFrame'i tabeli jaoks
+tabeli_df = pd.DataFrame()
 
 if sugu_valik in ["Mehed", "Naised"]:
-    cols = [f"{sugu_valik} Elussünnid", f"{sugu_valik} Surmad", f"{sugu_valik} Loomulik iive"]
-    for col in cols:
-        if col not in df_tabel.columns:
-            st.error(f"Veerg '{col}' puudub andmetes.")
+    # Kontrollime, et vajalikud veerud olemas
+    vajalikud = [f"{sugu_valik} Elussünnid", f"{sugu_valik} Surmad", f"{sugu_valik} Loomulik iive"]
+    for v in vajalikud:
+        if v not in df_aasta.columns:
+            st.error(f"Veerg '{v}' puudub andmetes.")
             st.stop()
-    df_tabel["Elussünnid"] = df_tabel[cols[0]]
-    df_tabel["Surmad"] = df_tabel[cols[1]]
-    df_tabel["Loomulik iive"] = df_tabel[cols[2]]
-else:
-    for muutuja in ["Elussünnid", "Surmad", "Loomulik iive"]:
-        if f"Mehed {muutuja}" not in df_tabel.columns or f"Naised {muutuja}" not in df_tabel.columns:
-            st.error(f"Puuduvad vajalikud veerud: Mehed {muutuja} või Naised {muutuja}.")
-            st.stop()
-    df_tabel["Elussünnid"] = df_tabel["Mehed Elussünnid"] + df_tabel["Naised Elussünnid"]
-    df_tabel["Surmad"] = df_tabel["Mehed Surmad"] + df_tabel["Naised Surmad"]
-    df_tabel["Loomulik iive"] = df_tabel["Mehed Loomulik iive"] + df_tabel["Naised Loomulik iive"]
 
-# Koostame tabeli õiges järjekorras
-df_valmis = df_tabel[["Maakonna kood", "Maakond", "Elussünnid", "Surmad", "Loomulik iive"]].copy()
-df_valmis.insert(0, "Jrk nr", range(1, len(df_valmis) + 1))
+    tabeli_df["Elussünnid"] = df_aasta[f"{sugu_valik} Elussünnid"]
+    tabeli_df["Surmad"] = df_aasta[f"{sugu_valik} Surmad"]
+    tabeli_df["Loomulik iive"] = df_aasta[f"{sugu_valik} Loomulik iive"]
+
+else:  # Kokku
+    # Summeerime meeste ja naiste väärtused
+    for v in ["Elussünnid", "Surmad", "Loomulik iive"]:
+        mehed_col = f"Mehed {v}"
+        naised_col = f"Naised {v}"
+        if mehed_col not in df_aasta.columns or naised_col not in df_aasta.columns:
+            st.error(f"Puuduvad veerud '{mehed_col}' ja/või '{naised_col}'.")
+            st.stop()
+        tabeli_df[v] = df_aasta[mehed_col] + df_aasta[naised_col]
+
+# Lisame Maakonna, Maakonna koodi ja järjekorranumbri
+tabeli_df.insert(0, "Maakond", df_aasta["Maakond"])
+tabeli_df.insert(0, "Maakonna kood", df_aasta["Maakonna kood"])
+tabeli_df.insert(0, "Jrk nr", range(1, len(tabeli_df) + 1))
 
 # --- Tabeli kuvamine ---
-st.subheader(f"Loomuliku iibe statistika ({sugu_valik}, {valitud_aasta})")
-st.dataframe(df_valmis)
+st.subheader(f"Eesti rahvastiku näitajad ({sugu_valik}, {valitud_aasta})")
+st.dataframe(tabeli_df)
 
 # --- Allalaadimine ---
-csv = df_valmis.to_csv(index=False).encode("utf-8")
+csv = tabeli_df.to_csv(index=False).encode("utf-8")
 st.download_button(
     label="Laadi tabel alla CSV-na",
     data=csv,
-    file_name=f"loomulik_iive_{sugu_valik.lower()}_{valitud_aasta}.csv",
+    file_name=f"rahvastik_{sugu_valik.lower()}_{valitud_aasta}.csv",
     mime="text/csv"
 )
