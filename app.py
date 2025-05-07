@@ -41,7 +41,7 @@ def import_geojson():
 # --- Streamlit ---
 st.set_page_config(page_title="Loomulik iive", layout="wide")
 st.title("Loomulik iive Eesti maakondades")
-st.markdown("### Tere tulemast Anne Pirni Eesti iibe dashboardile!")
+st.write("Tere tulemast Anne Pirni Eesti iibe dashboardile!")
 
 # --- Andmete laadimine ---
 df = import_data()
@@ -86,3 +86,54 @@ gdf_merged.plot(
 ax.set_title(f"{sugu_valik} {muutuja_valik} maakondade kaupa ({valitud_aasta})")
 ax.axis('off')
 st.pyplot(fig)
+
+# --- Tabeli andmed sõltumata kaardiselektsioonist ---
+df_tabel = df[df["Aasta"] == valitud_aasta].copy()
+
+# Lisame maakonna koodid
+maakonna_koodid = gdf[["MNIMI", "MKOOD"]].rename(columns={"MNIMI": "Maakond", "MKOOD": "Maakonna kood"})
+df_tabel = df_tabel.merge(maakonna_koodid, on="Maakond", how="left")
+
+# Loome tühi DataFrame tulemuseks
+tabeli_df = pd.DataFrame()
+
+# Lisame maakonna info ja järjekorranumbri
+tabeli_df["Maakonna kood"] = df_tabel["Maakonna kood"]
+tabeli_df["Maakond"] = df_tabel["Maakond"]
+
+# Lisa väärtused vastavalt sugupoolele
+if sugu_valik in ["Mehed", "Naised"]:
+    for veerg in ["Elussünnid", "Surmad", "Loomulik iive"]:
+        täisveerg = f"{sugu_valik} {veerg}"
+        if täisveerg not in df_tabel.columns:
+            st.error(f"Puudub veerg: {täisveerg}")
+            st.stop()
+        tabeli_df[veerg] = df_tabel[täisveerg].values
+else:  # Kokku
+    for veerg in ["Elussünnid", "Surmad", "Loomulik iive"]:
+        meeste_veerg = f"Mehed {veerg}"
+        naiste_veerg = f"Naised {veerg}"
+        if meeste_veerg not in df_tabel.columns or naiste_veerg not in df_tabel.columns:
+            st.error(f"Puuduvad veerud: {meeste_veerg}, {naiste_veerg}")
+            st.stop()
+        tabeli_df[veerg] = df_tabel[meeste_veerg].values + df_tabel[naiste_veerg].values
+
+# Eemaldame duplikaadid (kui neid tekib)
+tabeli_df = tabeli_df.drop_duplicates(subset=["Maakonna kood", "Maakond"])
+
+# Lisa järjekorranumber
+tabeli_df.insert(0, "Jrk nr", range(1, len(tabeli_df) + 1))
+
+# --- Kuvamine ---
+st.subheader(f"Eesti rahvastiku näitajad ({sugu_valik}, {valitud_aasta})")
+st.dataframe(tabeli_df)
+
+# --- Allalaadimine ---
+csv = tabeli_df.to_csv(index=False).encode("utf-8")
+st.download_button(
+    label="Laadi tabel alla CSV-na",
+    data=csv,
+    file_name=f"rahvastik_{sugu_valik.lower()}_{valitud_aasta}.csv",
+    mime="text/csv"
+)
+
