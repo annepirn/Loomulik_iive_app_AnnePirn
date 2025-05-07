@@ -41,6 +41,7 @@ def import_geojson():
 # --- Streamlit ---
 st.set_page_config(page_title="Loomulik iive", layout="wide")
 st.title("Loomulik iive Eesti maakondades")
+st.markdown("### Tere tulemast Anne Pirni Eesti iibe dashboardile!")
 
 # --- Andmete laadimine ---
 df = import_data()
