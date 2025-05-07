@@ -38,25 +38,26 @@ def import_data():
 def import_geojson():
     return gpd.read_file(GEOJSON_PATH)
 
-# --- Streamlit ---
+# --- Streamlit UI ---
+st.set_page_config(layout="wide")
 st.title("Loomulik iive Eesti maakondades")
 
+# Andmed
 df = import_data()
 gdf = import_geojson()
-
-# Veendume, et kõik on olemas
 if df.empty:
     st.stop()
 
-# Valikud
-valitud_aasta = st.selectbox("Vali aasta", sorted(df["Aasta"].unique()))
-sugu_valik = st.selectbox("Vali sugupool", ["Mehed", "Naised", "Kokku"])
-muutuja_valik = st.selectbox("Vali näitaja", ["Elussünnid", "Surmad", "Loomulik iive"])
+# Külgriba valikud
+with st.sidebar:
+    st.header("Seaded")
+    valitud_aasta = st.selectbox("Vali aasta", sorted(df["Aasta"].unique()))
+    sugu_valik = st.selectbox("Vali sugupool", ["Mehed", "Naised", "Kokku"])
+    muutuja_valik = st.selectbox("Vali näitaja", ["Elussünnid", "Surmad", "Loomulik iive"])
 
-# Filter ainult valitud aasta
+# Andmetöötlus
 df_aasta = df[df["Aasta"] == valitud_aasta]
 
-# Veeru nimi vastavalt valikule
 if sugu_valik in ["Mehed", "Naised"]:
     veeru_nimi = f"{sugu_valik} {muutuja_valik}"
     if veeru_nimi not in df_aasta.columns:
@@ -64,7 +65,7 @@ if sugu_valik in ["Mehed", "Naised"]:
         st.stop()
     df_summa = df_aasta[["Maakond", veeru_nimi]].copy()
     df_summa.rename(columns={veeru_nimi: "Valitud"}, inplace=True)
-else:  # Kokku
+else:
     mehed_veerg = f"Mehed {muutuja_valik}"
     naised_veerg = f"Naised {muutuja_valik}"
     if mehed_veerg not in df_aasta.columns or naised_veerg not in df_aasta.columns:
@@ -74,14 +75,19 @@ else:  # Kokku
     df_summa["Valitud"] = df_summa[mehed_veerg] + df_summa[naised_veerg]
     df_summa = df_summa[["Maakond", "Valitud"]]
 
-# Ühenda GeoDataFrame'iga
+# Geoandmete ühendamine
 gdf_merged = gdf.merge(df_summa, how="left", left_on="MNIMI", right_on="Maakond")
 
-# Joonista kaart
+# --- Kaart ---
+st.subheader(f"{sugu_valik} {muutuja_valik} maakondade kaupa ({valitud_aasta})")
 fig, ax = plt.subplots(figsize=(10, 8))
 gdf_merged.plot(
     column="Valitud", cmap="viridis", linewidth=0.8, ax=ax, edgecolor='0.8', legend=True
 )
-ax.set_title(f"{sugu_valik} {muutuja_valik} maakondade kaupa ({valitud_aasta})")
 ax.axis('off')
 st.pyplot(fig)
+
+# --- Tabel ---
+st.subheader("Maakondlikud andmed (tabelina)")
+df_summa_sorted = df_summa.sort_values("Valitud", ascending=False).reset_index(drop=True)
+st.dataframe(df_summa_sorted, use_container_width=True)
